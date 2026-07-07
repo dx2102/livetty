@@ -15,7 +15,7 @@ Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/co
 Try everything in the browser:
 
 1. Open one of these free ephemeral Linux terminals (either works, both spin up a temporary Linux VM you can type commands into):
-   - **[Killercoda](https://killercoda.com/playgrounds/scenario/ubuntu)**: no signup, anonymous 1-hour session
+   - **[Killercoda](https://killercoda.com/playgrounds/scenario/ubuntu)**: log in with a GitHub or Google account, click **Start**
    - **[GitHub Codespaces](https://github.com/codespaces/templates)**: log in with a GitHub account, pick the **Blank** template
 
 2. Paste this into the terminal:
