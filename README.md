@@ -28,13 +28,15 @@ Try everything in the browser:
     ./cloudflared-linux-amd64 tunnel --url http://localhost:8737 > cloudflared.log 2>&1 &
     ```
 
-    This downloads the livetty binary and cloudflared, then starts both in the background.
+    This downloads the livetty binary and cloudflared, then starts both in the background. Their outputs go to `livetty.log` and `cloudflared.log`.
 
 3. Grab the password:
 
     ```bash
-    cat config.json
+    cat livetty.log
     ```
+
+    Look for the `initial password: ...` line.
 
 4. Grab the public URL (may take a couple of seconds to appear, `cat` again if you don't see it):
 
