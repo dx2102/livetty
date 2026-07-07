@@ -39,7 +39,7 @@ Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter
 - Terminals persist across disconnects and self-heal (server-authoritative state, snapshot replay, no visual garbage)
 - Mouse scrolling stays in the browser, so it's instant (unlike a ttyd + tmux setup, where every wheel event round-trips through the server)
 - ANSI control sequences never get split mid-stream, so no visual garbage
-- All terminals share one WebSocket connection: opening a new terminal is instant, no per-session TCP handshake
+- All terminals share one WebSocket connection: opening a new terminal is instant, no per-session TCP handshake latency
 - tmux/zellij-style local CLI: drive open terminals from your shell (send keystrokes, capture snapshots, list, kill)
 
 ## Build from source
