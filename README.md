@@ -6,7 +6,7 @@ This is a simple web app for driving a remote machine: edit files, run terminals
 
 The terminals are persistent: they keep running even when the browser tab is closed, until you explicitly close them.
 
-Feature-wise it's similar to JupyterLab, but the backend is written in Rust: smaller memory footprint, snappier UI, fewer glitches. Mouse scrolling stays in the browser, so it's instant (unlike a ttyd + tmux setup, where every wheel event has to round-trip through the server).
+Feature-wise it's similar to JupyterLab, but the backend is written in Rust: smaller memory footprint, snappier UI, fewer glitches.
 
 Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) tunnel to reach it over the public internet, behind a password.
 
@@ -37,7 +37,8 @@ Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter
 - Token / password login, hardened for public exposure as best we can (HttpOnly + Secure + SameSite=Strict cookie, constant-time compare, failure rate-limit, WS Origin check to defeat cross-site hijacking)
 - Edit files (Monaco, atomic write + mtime conflict detection), use terminals (xterm.js)
 - Terminals persist across disconnects and self-heal (server-authoritative state, snapshot replay, no visual garbage)
-- Scrolling handled purely on the frontend, zero network latency; never splits ANSI control sequences mid-stream
+- Mouse scrolling stays in the browser, so it's instant (unlike a ttyd + tmux setup, where every wheel event round-trips through the server)
+- ANSI control sequences never get split mid-stream, so no visual garbage
 - All terminals share one WebSocket connection: opening a new terminal is instant, no per-session TCP handshake
 - tmux/zellij-style local CLI: drive open terminals from your shell (send keystrokes, capture snapshots, list, kill)
 
