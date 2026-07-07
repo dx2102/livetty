@@ -41,7 +41,7 @@ Try everything in the browser:
 4. Grab the public URL (may take a couple of seconds to appear, `cat` again if you don't see it):
 
     ```bash
-    cat cloudflared.log | grep cloudflare
+    cat cloudflared.log | grep trycloudflare
     ```
 
     Look for a `https://<random>.trycloudflare.com` line.
