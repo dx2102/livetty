@@ -1,0 +1,22 @@
+# Rust build artifacts
+/server/target/
+
+# Frontend dependencies and build output
+/web/node_modules/
+/web/dist/
+
+# Sensitive: plaintext password and session tokens. Never commit
+# (the server auto-generates config.json on first run).
+config.json
+sessions.json
+
+# Runtime output
+*.log
+
+# Misc
+.ipynb_checkpoints/
+.DS_Store
+
+# Private notes, kept locally, not published to GitHub
+CLAUDE.md
+DESIGN.md
