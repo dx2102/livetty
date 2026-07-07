@@ -34,8 +34,7 @@ Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter
 
 ## Features
 
-- Token / password login, hardened for public exposure as best we can (HttpOnly + Secure + SameSite=Strict cookie, constant-time compare, failure rate-limit, WS Origin check to defeat cross-site hijacking)
-- Edit files (Monaco, atomic write + mtime conflict detection), use terminals (xterm.js)
+- Token / password login, hardened for public exposure (HttpOnly + Secure + SameSite=Strict cookie, constant-time compare, failure rate-limit, WS Origin check to defeat cross-site hijacking)
 - Terminals persist across disconnects and self-heal (server-authoritative state, snapshot replay, no visual garbage)
 - Mouse scrolling stays in the browser, so it's instant (unlike a ttyd + tmux setup, where every wheel event round-trips through the server)
 - ANSI control sequences never get split mid-stream, so no visual garbage
