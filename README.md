@@ -1,3 +1,5 @@
+![Screenshot](docs/screenshot.png)
+
 # livetty
 
 This is a simple web app for driving a remote machine: edit files, run terminals, all in the browser.
@@ -7,8 +9,6 @@ The terminals are persistent: they keep running even when the browser tab is clo
 Feature-wise it's similar to JupyterLab, but the backend is written in Rust: smaller memory footprint, snappier UI, fewer glitches. Mouse scrolling stays in the browser, so it's instant (unlike a ttyd + tmux setup, where every wheel event has to round-trip through the server).
 
 Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) tunnel to reach it over the public internet, behind a password.
-
-![Screenshot](docs/screenshot.png)
 
 ## Install
 
