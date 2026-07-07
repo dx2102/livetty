@@ -14,7 +14,7 @@ Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/co
 
 Try everything in the browser:
 
-1. Open one of these. You get a full Linux terminal running right inside the browser tab, type your commands directly into that web page. The VM shuts down shortly after you close the tab, so don't put real data on it.
+1. Open one of these. Both run a temporary Linux VM on their servers and hand you a terminal in the browser tab that talks to it. Type your commands into that tab. The VM shuts down shortly after you close the tab, so don't put real data on it.
    - **[Killercoda](https://killercoda.com/playgrounds/scenario/ubuntu)**: log in with a GitHub or Google account, click **Start**
    - **[GitHub Codespaces](https://github.com/codespaces/templates)**: log in with a GitHub account, pick the **Blank** template
 
