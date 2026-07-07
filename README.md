@@ -38,6 +38,7 @@ Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter
 - Edit files (Monaco, atomic write + mtime conflict detection), use terminals (xterm.js)
 - Terminals persist across disconnects and self-heal (server-authoritative state, snapshot replay, no visual garbage)
 - Scrolling handled purely on the frontend, zero network latency; never splits ANSI control sequences mid-stream
+- All terminals share one WebSocket connection: opening a new terminal is instant, no per-session TCP handshake
 - tmux/zellij-style local CLI: drive open terminals from your shell (send keystrokes, capture snapshots, list, kill)
 
 ## Build from source
