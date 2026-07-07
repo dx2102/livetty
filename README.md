@@ -4,18 +4,15 @@ This is a simple web app for driving a remote machine: edit files, run terminals
 
 The terminals are persistent: they keep running even when the browser tab is closed, until you explicitly close them.
 
-Feature-wise it's similar to JupyterLab, but the backend is written in Rust: smaller memory footprint, snappier UI, fewer glitches.
+Feature-wise it's similar to JupyterLab, but the backend is written in Rust: smaller memory footprint, snappier UI, fewer glitches. Mouse scrolling stays in the browser, so it's instant (unlike a ttyd + tmux setup, where every wheel event has to round-trip through the server).
 
-Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) tunnel to reach the machine over the public internet. The API is password-protected, and we've taken every reasonable measure to keep it secure and defend against attacks.
+Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) tunnel to reach it over the public internet, behind a password.
 
 ![Screenshot](docs/screenshot.png)
 
-- **Backend** Rust ([axum](https://github.com/tokio-rs/axum) + [portable-pty](https://crates.io/crates/portable-pty) + [vt100](https://crates.io/crates/vt100)): the server owns the PTY and the authoritative terminal state, multiplexed over a single binary WebSocket.
-- **Frontend** TypeScript (Vite + UnoCSS + [xterm.js](https://xtermjs.org/) + [Monaco](https://microsoft.github.io/monaco-editor/)).
-
 ## Install
 
-Download the binary for your platform from the [Releases](https://github.com/dx2102/livetty/releases) page and run it. The frontend is embedded, so this really is one file:
+Download the binary for your platform from the [Releases](https://github.com/dx2102/livetty/releases) page and run it:
 
 ```bash
 curl -L -o livetty https://github.com/dx2102/livetty/releases/latest/download/livetty-linux-x86_64
@@ -25,7 +22,7 @@ chmod +x livetty
 
 The server auto-generates `config.json` with a random password (mode 0600) on first run and prints it to the log. Then open `http://localhost:8737` in a browser.
 
-Prebuilt binaries: `linux-x86_64`, `linux-aarch64`, `macos-aarch64` (Apple Silicon). Intel Macs are not prebuilt, build from source instead.
+Prebuilt binaries: `linux-x86_64`, `linux-aarch64`, `macos-aarch64` (Apple Silicon).
 
 To reach it from the public internet without owning a domain, install cloudflared and run:
 
@@ -37,7 +34,7 @@ Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter
 
 ## Features
 
-- Token / password login, safe to expose publicly (HttpOnly + Secure + SameSite=Strict cookie, constant-time compare, failure rate-limit, WS Origin check to defeat cross-site hijacking)
+- Token / password login, hardened for public exposure as best we can (HttpOnly + Secure + SameSite=Strict cookie, constant-time compare, failure rate-limit, WS Origin check to defeat cross-site hijacking)
 - Edit files (Monaco, atomic write + mtime conflict detection), use terminals (xterm.js)
 - Terminals persist across disconnects and self-heal (server-authoritative state, snapshot replay, no visual garbage)
 - Scrolling handled purely on the frontend, zero network latency; never splits ANSI control sequences mid-stream
