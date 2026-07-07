@@ -30,21 +30,21 @@ Try everything in the browser:
 
     This downloads the livetty binary and cloudflared, then starts both in the background. Their outputs go to `livetty.log` and `cloudflared.log`.
 
-3. Grab the password:
-
-    ```bash
-    cat livetty.log
-    ```
-
-    Look for the `initial password: ...` line.
-
-4. Grab the public URL (may take a couple of seconds to appear, `cat` again if you don't see it):
+3. Grab the public URL (may take a couple of seconds to appear, `cat` again if you don't see it):
 
     ```bash
     cat cloudflared.log | grep trycloudflare
     ```
 
     Look for a `https://<random>.trycloudflare.com` line.
+
+4. Grab the password:
+
+    ```bash
+    cat livetty.log
+    ```
+
+    Look for the `initial password: ...` line.
 
 5. Open that URL in a new browser tab and log in with the password.
 
