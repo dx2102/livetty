@@ -42,6 +42,16 @@ Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter
 - All terminals share one WebSocket connection: opening a new terminal is instant, no per-session TCP handshake latency
 - tmux/zellij-style local CLI: drive terminals from your shell (spawn new ones, send keystrokes, capture snapshots, list, kill)
 
+## Configuration (`config.json`)
+
+| Field | Description |
+|---|---|
+| `password` | Login password (auto-generated or set by hand). Startup refuses an empty value. |
+| `port` / `bind` | Listen port / address (default 8737 / 127.0.0.1) |
+| `allowed_origins` | Extra allowed WS Origins (e.g. the vite dev-server port) |
+
+`config.json` and `sessions.json` contain the password and session tokens; both are `.gitignore`d and never checked in.
+
 ## Build from source
 
 **Backend**
@@ -64,14 +74,4 @@ bun run build        # output goes to web/dist, served by the backend
 ```
 
 **Named tunnel (custom domain)**: point a cloudflared named tunnel at `your.domain -> localhost:8737`. The server only binds `127.0.0.1`, so the raw port is never exposed.
-
-## Configuration (`config.json`)
-
-| Field | Description |
-|---|---|
-| `password` | Login password (auto-generated or set by hand). Startup refuses an empty value. |
-| `port` / `bind` | Listen port / address (default 8737 / 127.0.0.1) |
-| `allowed_origins` | Extra allowed WS Origins (e.g. the vite dev-server port) |
-
-`config.json` and `sessions.json` contain the password and session tokens; both are `.gitignore`d and never checked in.
 
