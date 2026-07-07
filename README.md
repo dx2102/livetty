@@ -10,11 +10,14 @@ Feature-wise it's similar to JupyterLab, but the backend is written in Rust: sma
 
 Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) tunnel to reach it over the public internet, behind a password.
 
-## Try it in 60 seconds
+## Installation
 
-No install, no signup, everything in the browser:
+Try everything in the browser:
 
-1. Open [Play with Docker](https://labs.play-with-docker.com/), log in with a Docker Hub account, click **Add new instance**.
+1. Open one of these free ephemeral Linux terminals (either works, both spin up a temporary Linux VM you can type commands into):
+   - **[Play with Docker](https://labs.play-with-docker.com/)**: log in with a Docker Hub account, click **Add new instance**
+   - **[GitHub Codespaces](https://github.com/codespaces/new)**: log in with a GitHub account, launch a codespace
+
 2. Paste this into the terminal:
 
     ```bash
@@ -24,6 +27,8 @@ No install, no signup, everything in the browser:
     ./livetty-linux-x86_64 serve config.json > livetty.log 2>&1 &
     ./cloudflared-linux-amd64 tunnel --url http://localhost:8737 > cloudflared.log 2>&1 &
     ```
+
+    This downloads the livetty binary and cloudflared, then starts both in the background.
 
 3. Grab the password:
 
@@ -41,7 +46,7 @@ No install, no signup, everything in the browser:
 
 5. Open that URL in a new browser tab and log in with the password.
 
-Prebuilt binaries: `linux-x86_64`, `linux-aarch64`, `macos-aarch64` (Apple Silicon). The Play with Docker container self-destructs after 4 hours; don't put real data there.
+Prebuilt binaries: `linux-x86_64`, `linux-aarch64`, `macos-aarch64` (Apple Silicon).
 
 ## Features
 
