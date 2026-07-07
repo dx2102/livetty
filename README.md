@@ -10,27 +10,38 @@ Feature-wise it's similar to JupyterLab, but the backend is written in Rust: sma
 
 Pair it with a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) tunnel to reach it over the public internet, behind a password.
 
-## Install
+## Try it in 60 seconds
 
-Download the binary for your platform from the [Releases](https://github.com/dx2102/livetty/releases) page and run it:
+No install, no signup, everything in the browser:
 
-```bash
-curl -L -o livetty https://github.com/dx2102/livetty/releases/latest/download/livetty-linux-x86_64
-chmod +x livetty
-./livetty serve config.json
-```
+1. Open [Play with Docker](https://labs.play-with-docker.com/), log in with a Docker Hub account, click **Add new instance**.
+2. Paste this into the terminal:
 
-The server auto-generates `config.json` with a random password (mode 0600) on first run and prints it to the log. Then open `http://localhost:8737` in a browser.
+    ```bash
+    curl -LO https://github.com/dx2102/livetty/releases/latest/download/livetty-linux-x86_64
+    curl -LO https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+    chmod +x livetty-linux-x86_64 cloudflared-linux-amd64
+    ./livetty-linux-x86_64 serve config.json > livetty.log 2>&1 &
+    ./cloudflared-linux-amd64 tunnel --url http://localhost:8737 > cloudflared.log 2>&1 &
+    ```
 
-Prebuilt binaries: `linux-x86_64`, `linux-aarch64`, `macos-aarch64` (Apple Silicon).
+3. Grab the password:
 
-To reach it from the public internet without owning a domain, install cloudflared and run:
+    ```bash
+    cat config.json
+    ```
 
-```bash
-cloudflared tunnel --url http://localhost:8737
-```
+4. Grab the public URL (may take a couple of seconds to appear, `cat` again if you don't see it):
 
-Cloudflare will print a `https://<random>.trycloudflare.com` URL. Open it, enter the password from `config.json`, and you're in.
+    ```bash
+    cat cloudflared.log
+    ```
+
+    Look for a `https://<random>.trycloudflare.com` line.
+
+5. Open that URL in a new browser tab and log in with the password.
+
+Prebuilt binaries: `linux-x86_64`, `linux-aarch64`, `macos-aarch64` (Apple Silicon). The Play with Docker container self-destructs after 4 hours; don't put real data there.
 
 ## Features
 
