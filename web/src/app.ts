@@ -134,7 +134,7 @@ export class App {
     const brand = h('div', 'text-base font-semibold text-gray-700 px-1 select-none', 'remote')
     this.statusDot = h('div', 'w-2 h-2 rounded-full bg-yellow-400 shrink-0')
     this.statusDot.title = 'Connecting…'
-    this.tabBar = h('div', 'flex items-center gap-0.5 flex-1 overflow-x-auto min-w-0 h-full')
+    this.tabBar = h('div', 'tab-scroll flex items-center gap-0.5 flex-1 overflow-x-auto min-w-0 h-full')
     // JupyterLab-style "＋" launcher: lives INSIDE the tab bar, always the last
     // child, so it sits flush against the last tab (not the far right of the
     // screen). New tabs get insertBefore(plusBtn) to keep it as the tail.
@@ -186,7 +186,7 @@ export class App {
     this.sideEl = h('div', 'shrink-0 border-r border-gray-200 flex flex-col overflow-hidden')
     this.sideEl.style.width = `${this.sideWidth}px`
     this.sideToolbar = h('div', 'shrink-0')
-    this.sideContent = h('div', 'flex-1 overflow-y-auto min-h-0')
+    this.sideContent = h('div', 'flex-1 overflow-y-auto min-h-0 relative')
     this.sideEl.append(this.sideToolbar, this.sideContent)
 
     // Resize grip (only visible while sidebar is open)
@@ -445,6 +445,20 @@ export class App {
     }
   }
 
+  private displayPath(p: string): string {
+    const home = this.home
+    if (p === home) return '~'
+    if (p.startsWith(home + '/')) return '~' + p.slice(home.length)
+    return p
+  }
+
+  private expandPath(s: string): string {
+    const t = s.trim()
+    if (t === '~') return this.home
+    if (t.startsWith('~/')) return this.home + t.slice(1)
+    return t
+  }
+
   private async loadDir(path: string) {
     try {
       const res = await api.listDir(path)
@@ -527,9 +541,9 @@ export class App {
   private renderFiles() {
     const bar = h('div', 'flex items-center gap-1 p-1.5 border-b border-gray-100 bg-white')
     const pathInput = h('input', 'flex-1 min-w-0 text-base border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400') as HTMLInputElement
-    pathInput.value = this.cwd
+    pathInput.value = this.displayPath(this.cwd)
     pathInput.onkeydown = (e) => {
-      if (e.key === 'Enter') void this.loadDir(pathInput.value.trim())
+      if (e.key === 'Enter') void this.loadDir(this.expandPath(pathInput.value))
     }
     const mkBtn = (label: string, title: string, fn: () => void) => {
       const b = h('button', 'text-base text-gray-500 hover:bg-gray-100 rounded px-2 py-1 shrink-0', label)
@@ -571,8 +585,8 @@ export class App {
     )
     this.sideContent.appendChild(header)
 
-    const list = h('div', 'py-1 relative min-h-32')
-    this.bindDropUpload(list)
+    const list = h('div', 'py-1 min-h-32')
+    this.bindDropUpload(this.sideContent)
     // parent dir
     if (this.cwd !== '/') {
       const up = h('div', 'px-2 py-1 text-base text-gray-500 hover:bg-gray-100 cursor-pointer select-none', '.. /')

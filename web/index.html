@@ -11,6 +11,9 @@
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+    /* Top tab bar: keep horizontal scroll, hide the scrollbar chrome */
+    .tab-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+    .tab-scroll::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body>
