@@ -116,6 +116,8 @@ export class App {
   private sideOpen = true
   private sideWidth = Math.max(180, Math.min(800, Number(localStorage.getItem('sideWidth')) || 360))
   private activityBtns: Record<string, HTMLElement> = {}
+  private dropOverlay!: HTMLElement
+  private dropBound = false
 
   constructor(home: string, hostname: string) {
     this.home = home
@@ -188,6 +190,7 @@ export class App {
     this.sideToolbar = h('div', 'shrink-0')
     this.sideContent = h('div', 'flex-1 overflow-y-auto min-h-0 relative')
     this.sideEl.append(this.sideToolbar, this.sideContent)
+    this.bindDropUpload()
 
     // Resize grip (only visible while sidebar is open)
     this.gripEl = h(
@@ -586,7 +589,7 @@ export class App {
     this.sideContent.appendChild(header)
 
     const list = h('div', 'py-1 min-h-32')
-    this.bindDropUpload(this.sideContent)
+    this.rebuildDropOverlay()
     // parent dir
     if (this.cwd !== '/') {
       const up = h('div', 'px-2 py-1 text-base text-gray-500 hover:bg-gray-100 cursor-pointer select-none', '.. /')
@@ -661,24 +664,31 @@ export class App {
     this.sideContent.appendChild(list)
   }
 
-  private bindDropUpload(target: HTMLElement) {
-    let depth = 0
-    const overlay = h(
+  private rebuildDropOverlay() {
+    this.dropOverlay = h(
       'div',
       'absolute inset-0 hidden items-center justify-center bg-blue-50/80 border-2 border-dashed border-blue-400 text-blue-700 pointer-events-none select-none rounded z-10 text-base',
       'Drop to upload',
     )
-    overlay.dataset.dropOverlay = '1'
-    target.appendChild(overlay)
+    this.dropOverlay.dataset.dropOverlay = '1'
+    this.sideContent.appendChild(this.dropOverlay)
+  }
+
+  private bindDropUpload() {
+    this.rebuildDropOverlay()
+    if (this.dropBound) return
+    this.dropBound = true
+    let depth = 0
     const show = () => {
-      overlay.classList.remove('hidden')
-      overlay.classList.add('flex')
+      this.dropOverlay.classList.remove('hidden')
+      this.dropOverlay.classList.add('flex')
     }
     const hide = () => {
       depth = 0
-      overlay.classList.add('hidden')
-      overlay.classList.remove('flex')
+      this.dropOverlay.classList.add('hidden')
+      this.dropOverlay.classList.remove('flex')
     }
+    const target = this.sideContent
     target.addEventListener('dragenter', (e) => {
       if (!e.dataTransfer?.types.includes('Files')) return
       e.preventDefault()
