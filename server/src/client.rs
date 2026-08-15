@@ -193,48 +193,51 @@ async fn new_term(cwd: Option<String>, rows: u16, cols: u16) {
     }
 }
 
+/// A snapshot is one value the server already holds complete, so ask for it
+/// with a dedicated op and read until the server says it is done.
+///
+/// This used to reuse `attach`, which also subscribes to the live stream, and
+/// then guessed where the snapshot ended by waiting for 600ms of silence. That
+/// never terminates on a terminal repainting more often than that (a spinner is
+/// enough), and under load it could also cut a snapshot short while still
+/// reporting success.
 async fn snap(id: u64) {
     let mut ws = connect().await;
     // Skip hello
     let _ = next_json(&mut ws, Duration::from_secs(2)).await;
-    send_json(&mut ws, &json!({"op": "attach", "id": id})).await;
+    send_json(&mut ws, &json!({"op": "snap", "id": id})).await;
 
-    // Then collect FT_BYTES frames for our id until stream goes idle.
     let mut buf = Vec::new();
-    let mut seen_attached = false;
+    let mut done = false;
     let mut error: Option<String> = None;
-    loop {
-        let msg = tokio::time::timeout(Duration::from_millis(600), ws.next()).await;
-        match msg {
-            Err(_) => break, // idle timeout → snapshot done
-            Ok(None) => break,
-            Ok(Some(Err(_))) => break,
-            Ok(Some(Ok(Message::Binary(b)))) => {
-                if b.len() < 5 {
-                    continue;
-                }
-                let ft = b[0];
-                let term_id = u32::from_le_bytes([b[1], b[2], b[3], b[4]]) as u64;
-                if ft == FT_JSON {
-                    if let Ok(v) = serde_json::from_slice::<Value>(&b[5..]) {
-                        let name = v.get("ev").and_then(|v| v.as_str()).unwrap_or("");
-                        if name == "attached" {
-                            seen_attached = true;
-                        } else if name == "error" {
-                            error = Some(
-                                v.get("msg")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("attach error")
-                                    .to_string(),
-                            );
-                            break;
-                        }
-                    }
-                } else if ft == FT_BYTES && term_id == id {
-                    buf.extend_from_slice(&b[5..]);
-                }
+    // Bounded wait per frame: a wedged server should fail, not hang forever.
+    while let Ok(Some(Ok(msg))) = tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
+        let Message::Binary(b) = msg else { continue }; // ping/pong/close
+        if b.len() < 5 {
+            continue;
+        }
+        if b[0] == FT_BYTES {
+            if u32::from_le_bytes([b[1], b[2], b[3], b[4]]) as u64 == id {
+                buf.extend_from_slice(&b[5..]);
             }
-            Ok(Some(Ok(_))) => {} // ping/pong/close, ignore
+            continue;
+        }
+        let Ok(v) = serde_json::from_slice::<Value>(&b[5..]) else { continue };
+        match v.get("ev").and_then(|v| v.as_str()).unwrap_or("") {
+            "snap_end" => {
+                done = true;
+                break;
+            }
+            "error" => {
+                error = Some(
+                    v.get("msg")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("snap error")
+                        .to_string(),
+                );
+                break;
+            }
+            _ => {}
         }
     }
     let _ = ws.close(None).await;
@@ -242,8 +245,8 @@ async fn snap(id: u64) {
         eprintln!("wt: {e}");
         std::process::exit(1);
     }
-    if !seen_attached {
-        eprintln!("wt: never received attached event");
+    if !done {
+        eprintln!("wt: snapshot did not complete");
         std::process::exit(1);
     }
     // stdout raw bytes (ANSI included)

@@ -167,6 +167,9 @@ enum Op {
     Attach {
         id: u64,
     },
+    Snap {
+        id: u64,
+    },
     Detach {
         id: u64,
         sub: u64,
@@ -201,6 +204,28 @@ async fn handle_op(app: &Arc<App>, out_tx: &mpsc::Sender<Message>, op: Op) {
                     .await;
             }
         },
+        // One-shot screen dump, for `livetty snap`. Deliberately does not
+        // subscribe: the reply is the snapshot and nothing else, terminated by
+        // snap_end, so the client is told where it ends instead of having to
+        // guess from timing.
+        Op::Snap { id } => {
+            let Some(snap) = app.terms.snapshot(id) else {
+                let _ = out_tx
+                    .send(json_frame(
+                        &serde_json::json!({"ev": "error", "msg": format!("terminal {id} not found")}),
+                    ))
+                    .await;
+                return;
+            };
+            for chunk in snap.chunks(SLICE) {
+                if out_tx.send(frame(FT_BYTES, id, chunk)).await.is_err() {
+                    return;
+                }
+            }
+            let _ = out_tx
+                .send(json_frame(&serde_json::json!({"ev": "snap_end", "id": id})))
+                .await;
+        }
         Op::Attach { id } => {
             let sub_id = app.terms.next_sub_id();
             let Some((snap, exited, mut rx)) = app.terms.attach(id, sub_id) else {

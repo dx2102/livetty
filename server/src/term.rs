@@ -383,6 +383,15 @@ impl TermManager {
         Some((snap, exited, rx))
     }
 
+    /// One-shot screen dump. Unlike `attach`, this does not register a
+    /// subscriber, so the caller gets a value rather than a value followed by
+    /// an endless stream, and has nothing to unsubscribe from afterwards.
+    pub fn snapshot(&self, id: u64) -> Option<Vec<u8>> {
+        let term = self.get(id)?;
+        let snap = term.state.lock().unwrap().dump();
+        Some(snap)
+    }
+
     pub fn detach(&self, id: u64, sub_id: u64) {
         if let Some(term) = self.get(id) {
             term.state.lock().unwrap().subs.remove(&sub_id);
