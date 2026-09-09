@@ -466,15 +466,63 @@ export class App {
     try {
       const res = await api.listDir(path)
       this.cwd = res.path
+      this.highlightFile = null
       this.renderSide(res.entries)
     } catch (e: any) {
       this.toast(`Failed to read directory: ${e.message}`)
     }
   }
 
+  /**
+   * Target of the path box. A directory is just browsed to; a file is opened in
+   * a tab AND the browser jumps to its folder with the row highlighted.
+   * There is no stat endpoint, so "file or directory?" is answered by listing
+   * the parent, which is the listing we need to show anyway.
+   */
+  private async goToPath(raw: string) {
+    const path = this.expandPath(raw)
+    if (!path) return
+    try {
+      const res = await api.listDir(path)
+      this.cwd = res.path
+      this.highlightFile = null
+      this.renderSide(res.entries)
+      return
+    } catch (e: any) {
+      // read_dir on a regular file also reports 404, so a 404 is not yet an
+      // answer, retry the path as a file. Anything else is a real error.
+      if (e.status !== 404) {
+        this.toast(`Failed to read directory: ${e.message}`)
+        return
+      }
+    }
+    const clean = path.replace(/\/+$/, '')
+    const cut = clean.lastIndexOf('/')
+    const parent = cut <= 0 ? '/' : clean.slice(0, cut)
+    const name = clean.slice(cut + 1)
+    let res: { path: string; entries: FileEntry[] }
+    try {
+      res = await api.listDir(parent)
+    } catch {
+      this.toast(`No such file or directory: ${path}`)
+      return
+    }
+    const ent = res.entries.find((x) => x.name === name)
+    if (!ent || ent.is_dir) {
+      this.toast(`No such file or directory: ${path}`)
+      return
+    }
+    this.cwd = res.path
+    this.highlightFile = `${this.cwd === '/' ? '' : this.cwd}/${name}`
+    this.renderSide(res.entries)
+    await this.openFile(this.highlightFile)
+  }
+
   // ---------- Sidebar ----------
 
   private lastEntries: FileEntry[] = []
+  /** Row to highlight after the path box jumped straight to a file. */
+  private highlightFile: string | null = null
 
   private renderSide(entries?: FileEntry[]) {
     if (entries) this.lastEntries = entries
@@ -546,7 +594,7 @@ export class App {
     const pathInput = h('input', 'flex-1 min-w-0 text-base border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400') as HTMLInputElement
     pathInput.value = this.displayPath(this.cwd)
     pathInput.onkeydown = (e) => {
-      if (e.key === 'Enter') void this.loadDir(this.expandPath(pathInput.value))
+      if (e.key === 'Enter') void this.goToPath(pathInput.value)
     }
     const mkBtn = (label: string, title: string, fn: () => void) => {
       const b = h('button', 'text-base text-gray-500 hover:bg-gray-100 rounded px-2 py-1 shrink-0', label)
@@ -604,15 +652,19 @@ export class App {
     // Sort by mtime descending (newest first)
     const sorted = [...this.lastEntries].sort((a, b) => b.mtime_ms - a.mtime_ms)
     for (const ent of sorted) {
+      const full = `${this.cwd === '/' ? '' : this.cwd}/${ent.name}`
+      const hit = full === this.highlightFile
       const row = h(
         'div',
-        'flex items-center gap-2 px-2 py-1 text-base hover:bg-gray-100 cursor-pointer select-none',
+        'flex items-center gap-2 px-2 py-1 text-base cursor-pointer select-none ' +
+          (hit ? 'bg-blue-50' : 'hover:bg-gray-100'),
       )
       row.dataset.fileRow = '1'
+      // Long listings can bury the row the path box just aimed at.
+      if (hit) queueMicrotask(() => row.scrollIntoView({ block: 'nearest' }))
       const icon = h('span', 'w-6 text-center shrink-0', ent.is_dir ? '📁' : '📄')
       const name = h('span', 'truncate flex-1 min-w-0', ent.name)
       const mtime = h('span', 'w-24 shrink-0 text-right text-gray-500 tabular-nums', fmtMtime(ent.mtime_ms))
-      const full = `${this.cwd === '/' ? '' : this.cwd}/${ent.name}`
       row.onmousedown = (e) => {
         if (e.button !== 0) return
         if (ent.is_dir) void this.loadDir(full)
