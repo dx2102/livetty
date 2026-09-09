@@ -67,10 +67,21 @@ export class TermPane {
     this.id = id
     this.ws = ws
     this.el = document.createElement('div')
-    this.el.className = 'relative w-full h-full'
+    // overflow-hidden is a backstop: a terminal that ends up a pixel too tall
+    // must not leak into the document's scroll area and give the whole page a
+    // scrollbar. It should never happen now, but it is cheap insurance.
+    this.el.className = 'relative w-full h-full overflow-hidden'
+    // The gutter lives on this outer box, NOT on the terminal's direct parent.
+    // FitAddon sizes the terminal from getComputedStyle(parent).height, and
+    // under box-sizing:border-box that value still includes the parent's own
+    // padding. Padding here would therefore be counted as usable space and let
+    // fit propose one row too many, which then hangs below the pane.
+    const gutter = document.createElement('div')
+    gutter.className = 'absolute inset-0 pl-2 pt-2 bg-white'
     this.holder = document.createElement('div')
-    this.holder.className = 'absolute inset-0 pl-2 pt-2 bg-white'
-    this.el.appendChild(this.holder)
+    this.holder.className = 'w-full h-full'
+    gutter.appendChild(this.holder)
+    this.el.appendChild(gutter)
 
     this.overlay = document.createElement('div')
     this.overlay.className =
