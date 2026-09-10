@@ -325,6 +325,10 @@ export class App {
     btn.append(kindIcon, titleEl, close)
     btn.onmousedown = (e) => {
       if (e.button !== 0) return
+      // The browser's own mousedown focus handling runs after this listener and
+      // would pull focus off the terminal's textarea onto <body>, so a freshly
+      // clicked tab needed a second click before it took keystrokes.
+      e.preventDefault()
       this.activate(key)
     }
     // Insert before the trailing ＋ so it stays as the last child of tabBar.
@@ -346,7 +350,10 @@ export class App {
   }
 
   private activate(key: string) {
-    if (this.activeKey === key) return
+    if (this.activeKey === key) {
+      this.focusPane(this.tabs.get(key))
+      return
+    }
     const prev = this.activeKey ? this.tabs.get(this.activeKey) : null
     if (prev) {
       this.paneEl(prev).style.display = 'none'
@@ -373,6 +380,16 @@ export class App {
     }
     // Keep sidebar's active-terminal highlight in sync with the top tab bar.
     if (this.sideOpen && this.sideMode === 'terms') this.renderSide()
+  }
+
+  /** Put the caret back into the pane's own input (xterm textarea / editor). */
+  private focusPane(tab?: Tab | null) {
+    if (!tab || tab.pane instanceof HTMLElement) return
+    try {
+      tab.pane.focus()
+    } catch (e) {
+      console.warn('pane.focus failed:', e)
+    }
   }
 
   private paneEl(tab: Tab): HTMLElement {
@@ -829,6 +846,7 @@ export class App {
       kill.onmousedown = (e) => e.stopPropagation()
       row.onmousedown = (e) => {
         if (e.button !== 0) return
+        e.preventDefault() // Same focus-stealing reason as the tab bar's mousedown.
         this.openTerm(t.id)
       }
       row.append(dot, label, kill)

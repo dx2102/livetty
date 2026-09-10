@@ -139,6 +139,10 @@ export class EditorPane {
   }
 
   show() {
+    this.focus()
+  }
+
+  focus() {
     this.view.focus()
   }
 

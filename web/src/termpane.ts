@@ -220,6 +220,10 @@ export class TermPane {
         this.webgl = null
       }
     }
+    this.focus()
+  }
+
+  focus() {
     this.term.focus()
   }
 
