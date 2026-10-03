@@ -14,6 +14,21 @@ interface Tab {
   pane: TermPane | EditorPane | HTMLElement
 }
 
+/**
+ * The server echoes back whatever path it was given, so "/a/b/" or "/a//b"
+ * typed into the path box would become cwd and later get joined into
+ * "/a/b//c". Collapse slashes, drop "." and resolve ".." here.
+ */
+function normPath(p: string): string {
+  const out: string[] = []
+  for (const seg of p.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') out.pop()
+    else out.push(seg)
+  }
+  return '/' + out.join('/')
+}
+
 function fmtMtime(ms: number): string {
   if (!ms) return ''
   const diff = Date.now() - ms
@@ -482,7 +497,7 @@ export class App {
   private async loadDir(path: string) {
     try {
       const res = await api.listDir(path)
-      this.cwd = res.path
+      this.cwd = normPath(res.path)
       this.highlightFile = null
       this.renderSide(res.entries)
     } catch (e: any) {
@@ -501,7 +516,7 @@ export class App {
     if (!path) return
     try {
       const res = await api.listDir(path)
-      this.cwd = res.path
+      this.cwd = normPath(res.path)
       this.highlightFile = null
       this.renderSide(res.entries)
       return
@@ -529,7 +544,7 @@ export class App {
       this.toast(`No such file or directory: ${path}`)
       return
     }
-    this.cwd = res.path
+    this.cwd = normPath(res.path)
     this.highlightFile = `${this.cwd === '/' ? '' : this.cwd}/${name}`
     this.renderSide(res.entries)
     await this.openFile(this.highlightFile)
