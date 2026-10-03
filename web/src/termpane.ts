@@ -44,6 +44,8 @@ const LIGHT_THEME = {
   brightWhite: '#eeeeec',
 }
 
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches
+
 export class TermPane {
   readonly id: number
   readonly el: HTMLElement
@@ -62,6 +64,8 @@ export class TermPane {
   private searchBar: HTMLElement | null = null
   private searchInput: HTMLInputElement | null = null
   private searchCounter: HTMLElement | null = null
+  // Set by a keyCode 229 keydown on touch devices, cleared on keyup.
+  private imeKeyPending = false
 
   constructor(id: number, ws: WsClient) {
     this.id = id
@@ -109,17 +113,34 @@ export class TermPane {
         this.searchCounter.textContent = `${r.resultIndex + 1} / ${r.resultCount}`
       }
     })
-    // Intercept Ctrl/Cmd+F before xterm forwards it to the pty.
+    // Ctrl/Cmd+F anywhere in the pane, including inside the search box
+    // itself, opens our search. Capture phase on the pane runs before xterm
+    // (so ^F never reaches the pty) and before the browser's find bar.
+    this.el.addEventListener(
+      'keydown',
+      (ev) => {
+        if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === 'f') {
+          ev.preventDefault()
+          ev.stopPropagation()
+          this.openSearch()
+        }
+      },
+      true,
+    )
     this.term.attachCustomKeyEventHandler((ev) => {
-      if (
-        ev.type === 'keydown' &&
-        (ev.ctrlKey || ev.metaKey) &&
-        !ev.altKey &&
-        ev.key.toLowerCase() === 'f'
-      ) {
-        ev.preventDefault()
-        this.openSearch()
-        return false
+      // Work around xterm.js #5835 on touch keyboards (iOS / Android Chinese
+      // IMEs): space and punctuation arrive as keydown keyCode 229, but the
+      // text only lands in the textarea ~10ms later. xterm diffs the textarea
+      // in a setTimeout(0) that runs too early and sends nothing, then drops
+      // the late input event because a keydown was seen. So we keep xterm
+      // away from these keydowns and send the text from our own input
+      // listener (see ensureOpen) until the matching keyup.
+      if (IS_TOUCH) {
+        if (ev.type === 'keyup') this.imeKeyPending = false
+        else if (ev.type === 'keydown' && ev.keyCode === 229) {
+          this.imeKeyPending = true
+          return false
+        }
       }
       return true
     })
@@ -147,6 +168,15 @@ export class TermPane {
     // holder must be attached & visible before term.open (xterm requirement)
     this.term.open(this.holder)
     this.opened = true
+    // Second half of the #5835 workaround in the key handler above. Pinyin
+    // composition (insertCompositionText) is left to xterm. Double space
+    // turning into a CJK full stop shows up as a delete followed by an insert.
+    this.term.textarea?.addEventListener('input', (e) => {
+      const ev = e as InputEvent
+      if (!this.imeKeyPending || ev.isComposing) return
+      if (ev.inputType === 'insertText' && ev.data) this.term.input(ev.data, true)
+      else if (ev.inputType === 'deleteContentBackward') this.term.input('\x7f', true)
+    })
   }
 
   /**
