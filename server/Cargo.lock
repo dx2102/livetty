@@ -1176,7 +1176,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/Piebald-AI/vt100-rust?branch=main#79f63ddf8634d301c7c736018df3e04dc1440d38"
+source = "git+https://github.com/dx2102/vt100-rust?branch=livetty#c1618e944c341867b28615bf358d4feee7f27bf7"
 dependencies = [
  "itoa",
  "unicode-width",

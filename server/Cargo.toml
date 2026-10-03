@@ -8,7 +8,7 @@ axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-vt100 = { git = "https://github.com/Piebald-AI/vt100-rust", branch = "main" }
+vt100 = { git = "https://github.com/dx2102/vt100-rust", branch = "livetty" }
 portable-pty = "0.9"
 rand = "0.9"
 bytes = "1"
