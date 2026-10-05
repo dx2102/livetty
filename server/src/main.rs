@@ -2,6 +2,7 @@ mod auth;
 mod client;
 mod files;
 mod term;
+mod tus;
 mod ws;
 
 use axum::{
@@ -10,7 +11,7 @@ use axum::{
     http::{header, StatusCode, Uri},
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, head, post},
     Router,
 };
 use clap::{Parser, Subcommand};
@@ -206,6 +207,15 @@ async fn serve(cfg_path: &str) {
         .route(
             "/api/file/upload",
             post(files::upload).layer(DefaultBodyLimit::max(files::UPLOAD_MAX)),
+        )
+        .route("/api/tus", post(tus::create))
+        .route(
+            "/api/tus/{id}/{dest}",
+            head(tus::head)
+                .patch(tus::patch)
+                .delete(tus::delete)
+                // Bodies are streamed to disk, and chunks are capped by the client.
+                .layer(DefaultBodyLimit::disable()),
         )
         .route("/api/fs", post(files::fs_op))
         .route("/ws", get(ws::ws_handler))

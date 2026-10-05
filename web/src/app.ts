@@ -1,4 +1,4 @@
-import { api, type FileEntry } from './api'
+import { api, CHUNK, type FileEntry } from './api'
 import { WsClient, type TermInfo, type WsEvent } from './wsclient'
 import { TermPane } from './termpane'
 import { EditorPane } from './editorpane'
@@ -799,7 +799,8 @@ export class App {
       for (const f of files) {
         const dest = `${this.cwd === '/' ? '' : this.cwd}/${f.name}`
         try {
-          await api.upload(dest, f)
+          if (f.size > CHUNK) await this.uploadBig(dest, f)
+          else await api.upload(dest, f)
           ok++
         } catch (err: any) {
           failed.push(`${f.name}: ${err.message}`)
@@ -872,6 +873,24 @@ export class App {
   }
 
   // ---------- misc ----------
+
+  /** Resumable upload with a progress note that stays up until it ends. */
+  private async uploadBig(dest: string, f: File) {
+    const note = h(
+      'div',
+      'fixed bottom-4 left-4 bg-gray-800 text-white text-base rounded px-3 py-2 shadow-lg z-50 max-w-md tabular-nums',
+      `Uploading ${f.name}`,
+    )
+    document.body.appendChild(note)
+    const mb = (n: number) => (n / 1048576).toFixed(0)
+    try {
+      await api.uploadResumable(dest, f, (sent, total) => {
+        note.textContent = `Uploading ${f.name}  ${mb(sent)} / ${mb(total)} MB`
+      })
+    } finally {
+      note.remove()
+    }
+  }
 
   private toast(msg: string) {
     const t = h(

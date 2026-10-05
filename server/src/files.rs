@@ -15,11 +15,11 @@ const DOWNLOAD_MAX: u64 = 500 * 1024 * 1024; // 500 MiB
 /// Upload body cap (per-route DefaultBodyLimit set on the route as well).
 pub const UPLOAD_MAX: usize = 500 * 1024 * 1024; // 500 MiB
 
-fn err(code: StatusCode, msg: impl Into<String>) -> Response {
+pub(crate) fn err(code: StatusCode, msg: impl Into<String>) -> Response {
     (code, Json(json!({"error": msg.into()}))).into_response()
 }
 
-fn require_abs(p: &str) -> Result<PathBuf, Response> {
+pub(crate) fn require_abs(p: &str) -> Result<PathBuf, Response> {
     let path = PathBuf::from(p);
     if !path.is_absolute() {
         return Err(err(StatusCode::BAD_REQUEST, "path must be absolute"));
