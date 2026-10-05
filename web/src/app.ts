@@ -273,7 +273,7 @@ export class App {
       case 'create_ok':
         this.terminals.set(ev.term.id, ev.term)
         this.renderSide()
-        this.openTerm(ev.term.id)
+        this.openTerm(ev.term.id, false) // already attached by the create op
         break
       case 'created':
         this.terminals.set(ev.term.id, ev.term)
@@ -431,7 +431,7 @@ export class App {
 
   // ---------- Terminals ----------
 
-  private openTerm(id: number) {
+  private openTerm(id: number, attach = true) {
     const key = `term:${id}`
     if (this.tabs.has(key)) {
       this.activate(key)
@@ -441,11 +441,12 @@ export class App {
     const info = this.terminals.get(id)
     this.addTab(key, 'term', info?.title || `Terminal ${id}`, pane)
     this.activate(key)
-    pane.attach()
+    if (attach) pane.attach()
   }
 
   private createTerm() {
-    this.ws.sendOp({ op: 'create', cwd: this.cwd, rows: 24, cols: 80 })
+    // attach: true makes the server subscribe us in the same round trip.
+    this.ws.sendOp({ op: 'create', cwd: this.cwd, rows: 24, cols: 80, attach: true })
   }
 
   private async newFile() {

@@ -163,6 +163,10 @@ enum Op {
         cwd: Option<String>,
         rows: u16,
         cols: u16,
+        /// Subscribe the creator right away, saving the browser a round trip
+        /// (create_ok, then attach). The CLI leaves this off.
+        #[serde(default)]
+        attach: bool,
     },
     Attach {
         id: u64,
@@ -187,8 +191,9 @@ enum Op {
 
 async fn handle_op(app: &Arc<App>, out_tx: &mpsc::Sender<Message>, op: Op) {
     match op {
-        Op::Create { cwd, rows, cols } => match app.terms.create(cwd, rows, cols) {
+        Op::Create { cwd, rows, cols, attach } => match app.terms.create(cwd, rows, cols) {
             Ok(info) => {
+                let id = info.id;
                 // The Created event is broadcast to all connections; here we also
                 // send a targeted copy back to the requester so it knows "this is the one I just opened".
                 let _ = out_tx
@@ -197,6 +202,9 @@ async fn handle_op(app: &Arc<App>, out_tx: &mpsc::Sender<Message>, op: Op) {
                         "term": info,
                     })))
                     .await;
+                if attach {
+                    attach_and_stream(app, out_tx, id).await;
+                }
             }
             Err(e) => {
                 let _ = out_tx
@@ -226,58 +234,7 @@ async fn handle_op(app: &Arc<App>, out_tx: &mpsc::Sender<Message>, op: Op) {
                 .send(json_frame(&serde_json::json!({"ev": "snap_end", "id": id})))
                 .await;
         }
-        Op::Attach { id } => {
-            let sub_id = app.terms.next_sub_id();
-            let Some((snap, exited, mut rx)) = app.terms.attach(id, sub_id) else {
-                let _ = out_tx
-                    .send(json_frame(
-                        &serde_json::json!({"ev": "error", "msg": format!("terminal {id} not found")}),
-                    ))
-                    .await;
-                return;
-            };
-            // attached event (client resets the terminal on receipt) → snapshot replay → live stream.
-            // All three go through the same outbound queue, so ordering is naturally correct.
-            let _ = out_tx
-                .send(json_frame(&serde_json::json!({
-                    "ev": "attached",
-                    "id": id,
-                    "sub": sub_id,
-                    "exited": exited,
-                })))
-                .await;
-            for chunk in snap.chunks(SLICE) {
-                if out_tx.send(frame(FT_BYTES, id, chunk)).await.is_err() {
-                    app.terms.detach(id, sub_id);
-                    return;
-                }
-            }
-            // Forward task: live stream → outbound queue
-            let fwd_tx = out_tx.clone();
-            let app2 = app.clone();
-            tokio::spawn(async move {
-                while let Some(m) = rx.recv().await {
-                    match m {
-                        SubMsg::Output { data } => {
-                            // attach and vt100 updates are serialized under the same lock,
-                            // so bytes received here strictly follow the snapshot.
-                            let mut ok = true;
-                            for chunk in data.chunks(SLICE) {
-                                if fwd_tx.send(frame(FT_BYTES, id, chunk)).await.is_err() {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                            if !ok {
-                                break;
-                            }
-                        }
-                        SubMsg::Exited => break,
-                    }
-                }
-                app2.terms.detach(id, sub_id);
-            });
-        }
+        Op::Attach { id } => attach_and_stream(app, out_tx, id).await,
         Op::Detach { id, sub } => {
             app.terms.detach(id, sub);
         }
@@ -302,4 +259,59 @@ async fn handle_op(app: &Arc<App>, out_tx: &mpsc::Sender<Message>, op: Op) {
                 .await;
         }
     }
+}
+
+/// Subscribe this connection to terminal `id`: send `attached`, replay the
+/// snapshot, then stream live output. Used by both attach and create.
+async fn attach_and_stream(app: &Arc<App>, out_tx: &mpsc::Sender<Message>, id: u64) {
+    let sub_id = app.terms.next_sub_id();
+    let Some((snap, exited, mut rx)) = app.terms.attach(id, sub_id) else {
+        let _ = out_tx
+            .send(json_frame(
+                &serde_json::json!({"ev": "error", "msg": format!("terminal {id} not found")}),
+            ))
+            .await;
+        return;
+    };
+    // attached event (client resets the terminal on receipt) → snapshot replay → live stream.
+    // All three go through the same outbound queue, so ordering is naturally correct.
+    let _ = out_tx
+        .send(json_frame(&serde_json::json!({
+            "ev": "attached",
+            "id": id,
+            "sub": sub_id,
+            "exited": exited,
+        })))
+        .await;
+    for chunk in snap.chunks(SLICE) {
+        if out_tx.send(frame(FT_BYTES, id, chunk)).await.is_err() {
+            app.terms.detach(id, sub_id);
+            return;
+        }
+    }
+    // Forward task: live stream → outbound queue
+    let fwd_tx = out_tx.clone();
+    let app2 = app.clone();
+    tokio::spawn(async move {
+        while let Some(m) = rx.recv().await {
+            match m {
+                SubMsg::Output { data } => {
+                    // attach and vt100 updates are serialized under the same lock,
+                    // so bytes received here strictly follow the snapshot.
+                    let mut ok = true;
+                    for chunk in data.chunks(SLICE) {
+                        if fwd_tx.send(frame(FT_BYTES, id, chunk)).await.is_err() {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if !ok {
+                        break;
+                    }
+                }
+                SubMsg::Exited => break,
+            }
+        }
+        app2.terms.detach(id, sub_id);
+    });
 }
