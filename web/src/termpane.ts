@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import type { WsClient } from './wsclient'
 
@@ -101,6 +102,12 @@ export class TermPane {
       cursorBlink: true,
       allowProposedApi: true,
     })
+    // xterm.js defaults to Unicode 6 widths, where most emoji are one cell.
+    // Programs like Claude Code and the server-side vt100 parser treat them
+    // as two cells, so lines with emoji drift and partial redraws land in the
+    // wrong column.
+    this.term.loadAddon(new Unicode11Addon())
+    this.term.unicode.activeVersion = '11'
     this.fit = new FitAddon()
     this.term.loadAddon(this.fit)
     this.search = new SearchAddon()
