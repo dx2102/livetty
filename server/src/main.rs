@@ -1,6 +1,7 @@
 mod auth;
 mod client;
 mod files;
+mod query;
 mod term;
 mod tus;
 mod ws;

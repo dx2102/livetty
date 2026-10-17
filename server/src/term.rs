@@ -41,7 +41,7 @@ pub enum SubMsg {
     Exited,
 }
 
-// ---------- vt100 callbacks: capture window title + log unhandled sequences ----------
+// ---------- vt100 callbacks: capture window title, answer queries, log the rest ----------
 
 #[derive(Default)]
 struct Cb {
@@ -51,6 +51,8 @@ struct Cb {
     /// each new terminal re-logs anything it hits, useful when a specific
     /// program is the source and you want confirmation.
     seen_unhandled: HashSet<String>,
+    /// Answers to terminal queries, written back to the pty after each chunk.
+    replies: Vec<u8>,
 }
 
 impl Cb {
@@ -88,12 +90,16 @@ impl vt100::Callbacks for Cb {
     }
     fn unhandled_csi(
         &mut self,
-        _: &mut vt100::Screen,
+        screen: &mut vt100::Screen,
         i1: Option<u8>,
         i2: Option<u8>,
         params: &[&[u16]],
         c: char,
     ) {
+        if let Some(r) = crate::query::csi(screen, i1, i2, params, c) {
+            self.replies.extend_from_slice(&r);
+            return;
+        }
         let params_str: Vec<String> = params
             .iter()
             .map(|p| {
@@ -111,7 +117,11 @@ impl vt100::Callbacks for Cb {
             c,
         ));
     }
-    fn unhandled_osc(&mut self, _: &mut vt100::Screen, params: &[&[u8]]) {
+    fn unhandled_osc(&mut self, screen: &mut vt100::Screen, params: &[&[u8]]) {
+        if let Some(r) = crate::query::osc(screen, params) {
+            self.replies.extend_from_slice(&r);
+            return;
+        }
         let joined: Vec<String> = params
             .iter()
             .map(|p| String::from_utf8_lossy(p).into_owned())
@@ -296,6 +306,7 @@ impl TermManager {
         // active subscribers. No buffer accumulation, the vt100 parser IS the storage.
         let rstate = state.clone();
         let revents = self.events.clone();
+        let reply_tx = input_tx.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; READ_BUF];
             loop {
@@ -304,7 +315,7 @@ impl TermManager {
                     Ok(n) => n,
                 };
                 let chunk = &buf[..n];
-                let (senders, title);
+                let (senders, title, replies);
                 {
                     let mut st = rstate.lock().unwrap();
                     st.parser.process(chunk);
@@ -315,11 +326,17 @@ impl TermManager {
                     } else {
                         None
                     };
+                    replies = std::mem::take(&mut cb.replies);
                     senders = st
                         .subs
                         .iter()
                         .map(|(k, v)| (*k, v.clone()))
                         .collect::<Vec<_>>();
+                }
+                // try_send: if the input queue is full the program isn't reading
+                // its input anyway, and blocking here would stall its output.
+                if !replies.is_empty() {
+                    let _ = reply_tx.try_send(Bytes::from(replies));
                 }
                 if let Some(t) = title {
                     let _ = revents.send(Event::Title { id, title: t });

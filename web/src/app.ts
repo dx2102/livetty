@@ -307,8 +307,16 @@ export class App {
         if (tab) this.setTabTitle(tab, ev.title || `Terminal ${ev.id}`)
         break
       }
-      case 'resized':
+      case 'resized': {
+        const t = this.terminals.get(ev.id)
+        if (t) {
+          t.rows = ev.rows
+          t.cols = ev.cols
+        }
+        const tab = this.tabs.get(`term:${ev.id}`)
+        if (tab) (tab.pane as TermPane).onServerResize(ev.rows, ev.cols)
         break
+      }
       case 'error':
         this.toast(ev.msg)
         break

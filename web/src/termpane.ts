@@ -61,6 +61,9 @@ export class TermPane {
   subId = 0
   exited = false
   private visible = false
+  // Last pty size we know of: our own claim or the server's 'resized' event.
+  private ptyRows = 0
+  private ptyCols = 0
   // Search bar (lazy-built on first use)
   private searchBar: HTMLElement | null = null
   private searchInput: HTMLInputElement | null = null
@@ -155,18 +158,37 @@ export class TermPane {
     // xterm requires its container be in the DOM & visible; otherwise
     // _core._store never initializes and every future op throws.
 
-    this.term.onData((d) => this.ws.sendInput(this.id, d))
+    // The server answers terminal queries itself (server/src/query.rs), once,
+    // whether zero or many tabs are watching. Swallow them here so xterm.js
+    // doesn't send a second answer from every open tab. Color sets still go
+    // through, only `?` queries are dropped.
+    const swallow = () => true
+    const parser = this.term.parser
+    parser.registerCsiHandler({ final: 'c' }, swallow) // DA1
+    parser.registerCsiHandler({ prefix: '>', final: 'c' }, swallow) // DA2
+    parser.registerCsiHandler({ final: 'n' }, swallow) // DSR, cursor position
+    parser.registerCsiHandler({ prefix: '?', final: 'n' }, swallow)
+    parser.registerCsiHandler({ intermediates: '$', final: 'p' }, swallow) // DECRQM
+    parser.registerCsiHandler({ prefix: '?', intermediates: '$', final: 'p' }, swallow)
+    for (const osc of [4, 10, 11, 12]) {
+      parser.registerOscHandler(osc, (data) => data.split(';').includes('?'))
+    }
+
+    // Typing (or a mouse report) here makes this tab the one whose size the
+    // pty follows, like tmux's window-size latest.
+    this.term.onData((d) => {
+      this.claimIfOutsized()
+      this.ws.sendInput(this.id, d)
+    })
     this.term.onBinary((d) => {
+      this.claimIfOutsized()
       const bytes = new Uint8Array(d.length)
       for (let i = 0; i < d.length; i++) bytes[i] = d.charCodeAt(i) & 0xff
       this.ws.sendInput(this.id, bytes)
     })
-    this.term.onResize(({ rows, cols }) => {
-      this.ws.sendOp({ op: 'resize', id: this.id, rows, cols })
-    })
 
     new ResizeObserver(() => {
-      if (this.visible && this.opened) this.fitWithPadding()
+      if (this.visible && this.opened) this.claimSize()
     }).observe(this.holder)
   }
 
@@ -187,16 +209,47 @@ export class TermPane {
   }
 
   /**
-   * fit, but shave one column so the last character never touches the right edge
-   * and xterm's viewport (with its scrollbar) still spans the full holder width.
+   * What fit would pick, minus one column so the last character never touches
+   * the right edge and xterm's viewport (with its scrollbar) still spans the
+   * full holder width.
    */
-  private fitWithPadding() {
-    if (!this.opened) return
+  private fittedSize(): { rows: number; cols: number } | null {
+    if (!this.opened) return null
     const dims = this.fit.proposeDimensions()
-    if (!dims || dims.cols < 3 || dims.rows < 2) return
-    const cols = dims.cols - 1
-    const rows = dims.rows
-    if (this.term.cols !== cols || this.term.rows !== rows) {
+    if (!dims || dims.cols < 3 || dims.rows < 2) return null
+    return { rows: dims.rows, cols: dims.cols - 1 }
+  }
+
+  /**
+   * Make the pty our size. There is one pty size however many tabs watch, so
+   * the latest tab to resize, open or type wins and the others follow it in
+   * onServerResize: cropped if they're smaller, blank margin if bigger.
+   */
+  private claimSize(force = false) {
+    const size = this.fittedSize()
+    if (!size) return
+    if (this.term.cols !== size.cols || this.term.rows !== size.rows) {
+      this.term.resize(size.cols, size.rows)
+    }
+    if (force || this.ptyRows !== size.rows || this.ptyCols !== size.cols) {
+      this.ptyRows = size.rows
+      this.ptyCols = size.cols
+      this.ws.sendOp({ op: 'resize', id: this.id, rows: size.rows, cols: size.cols })
+    }
+  }
+
+  /** Before sending input: take the size back if another tab took it. */
+  private claimIfOutsized() {
+    if (!this.visible) return
+    const size = this.fittedSize()
+    if (size && (this.ptyRows !== size.rows || this.ptyCols !== size.cols)) this.claimSize()
+  }
+
+  /** Server 'resized' event (from any tab, ours included): follow the pty. */
+  onServerResize(rows: number, cols: number) {
+    this.ptyRows = rows
+    this.ptyCols = cols
+    if (this.opened && (this.term.cols !== cols || this.term.rows !== rows)) {
       this.term.resize(cols, rows)
     }
   }
@@ -210,16 +263,8 @@ export class TermPane {
     this.subId = sub
     if (this.opened) this.term.reset()
     this.setExited(exited)
-    // After attach, align PTY size with the actual viewport
-    if (this.visible && this.opened) {
-      this.fitWithPadding()
-      this.ws.sendOp({
-        op: 'resize',
-        id: this.id,
-        rows: this.term.rows,
-        cols: this.term.cols,
-      })
-    }
+    // After attach (also after a reconnect), make the pty match our viewport.
+    if (this.visible && this.opened) this.claimSize(true)
   }
 
   write(data: Uint8Array) {
@@ -242,7 +287,7 @@ export class TermPane {
   show() {
     this.visible = true
     this.ensureOpen()
-    this.fitWithPadding()
+    this.claimSize()
     if (!this.webgl) {
       try {
         this.webgl = new WebglAddon()
