@@ -1,17 +1,19 @@
 use axum::{
-    body::Bytes,
+    body::{Body, Bytes},
     extract::Query,
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use std::io::SeekFrom;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 const READ_MAX: u64 = 2 * 1024 * 1024; // 2 MiB
-/// Cap raw download response size. Larger files fall through into 413.
-const DOWNLOAD_MAX: u64 = 500 * 1024 * 1024; // 500 MiB
+/// Downloads are streamed from disk in chunks of this size, so memory use stays flat for any file size.
+const DOWNLOAD_CHUNK: usize = 256 * 1024;
 /// Upload body cap (per-route DefaultBodyLimit set on the route as well).
 pub const UPLOAD_MAX: usize = 500 * 1024 * 1024; // 500 MiB
 
@@ -149,8 +151,9 @@ pub async fn write_file(Json(body): Json<WriteReq>) -> Response {
 }
 
 /// GET /api/file/download?path=/abs/path
-/// Streams the file raw with `Content-Disposition: attachment` so the browser saves it.
-pub async fn download(Query(q): Query<PathQ>) -> Response {
+/// Streams the file with `Content-Disposition: attachment` so the browser saves it.
+/// Supports a single `Range: bytes=...` request, so an interrupted download can resume.
+pub async fn download(Query(q): Query<PathQ>, headers: HeaderMap) -> Response {
     let path = match require_abs(&q.path) {
         Ok(p) => p,
         Err(r) => return r,
@@ -162,16 +165,47 @@ pub async fn download(Query(q): Query<PathQ>) -> Response {
     if !meta.is_file() {
         return err(StatusCode::BAD_REQUEST, "not a regular file");
     }
-    if meta.len() > DOWNLOAD_MAX {
-        return err(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("file too large ({} bytes > {DOWNLOAD_MAX})", meta.len()),
-        );
-    }
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
+    let len = meta.len();
+    let range = match headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
+        Some(r) => match parse_range(r, len) {
+            Ok(r) => r,
+            Err(()) => {
+                return (
+                    StatusCode::RANGE_NOT_SATISFIABLE,
+                    [(header::CONTENT_RANGE, format!("bytes */{len}"))],
+                )
+                    .into_response()
+            }
+        },
+        None => None,
+    };
+    let (start, count) = match range {
+        Some((s, e)) => (s, e - s + 1),
+        None => (0, len),
+    };
+    let mut file = match tokio::fs::File::open(&path).await {
+        Ok(f) => f,
         Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")),
     };
+    if start > 0 {
+        if let Err(e) = file.seek(SeekFrom::Start(start)).await {
+            return err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}"));
+        }
+    }
+    let stream = futures_util::stream::unfold((file, count), |(mut f, left)| async move {
+        if left == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; DOWNLOAD_CHUNK.min(left as usize)];
+        match f.read(&mut buf).await {
+            Ok(0) => None, // file shrank while we were sending it
+            Ok(n) => {
+                buf.truncate(n);
+                Some((Ok::<_, std::io::Error>(Bytes::from(buf)), (f, left - n as u64)))
+            }
+            Err(e) => Some((Err(e), (f, 0))),
+        }
+    });
     let name = path
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -182,15 +216,52 @@ pub async fn download(Query(q): Query<PathQ>) -> Response {
         name.replace('\\', "\\\\").replace('"', "\\\""),
         urlencode(&name),
     );
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
-            (header::CONTENT_DISPOSITION, disp),
-        ],
-        bytes,
-    )
-        .into_response()
+    let mut resp = Response::builder()
+        .status(if range.is_some() { StatusCode::PARTIAL_CONTENT } else { StatusCode::OK })
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_DISPOSITION, disp)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, count);
+    if let Some((s, e)) = range {
+        resp = resp.header(header::CONTENT_RANGE, format!("bytes {s}-{e}/{len}"));
+    }
+    resp.body(Body::from_stream(stream))
+        .unwrap_or_else(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")))
+}
+
+/// Parses `bytes=a-b`, `bytes=a-` or `bytes=-n` into an inclusive (start, end).
+/// Ok(None) means "ignore the header and send the whole file" (multiple ranges, unknown unit,
+/// garbage), which RFC 9110 allows. Err(()) means the range is valid but past the end of the file.
+fn parse_range(h: &str, len: u64) -> Result<Option<(u64, u64)>, ()> {
+    let Some(spec) = h.trim().strip_prefix("bytes=") else { return Ok(None) };
+    if spec.contains(',') {
+        return Ok(None);
+    }
+    let Some((a, b)) = spec.split_once('-') else { return Ok(None) };
+    let (a, b) = (a.trim(), b.trim());
+    let (start, end) = if a.is_empty() {
+        // suffix range: the last n bytes
+        let Ok(n) = b.parse::<u64>() else { return Ok(None) };
+        if n == 0 || len == 0 {
+            return Err(());
+        }
+        (len.saturating_sub(n), len - 1)
+    } else {
+        let Ok(start) = a.parse::<u64>() else { return Ok(None) };
+        let end = if b.is_empty() {
+            len.saturating_sub(1)
+        } else {
+            match b.parse::<u64>() {
+                Ok(e) => e.min(len.saturating_sub(1)),
+                Err(_) => return Ok(None),
+            }
+        };
+        if start >= len || start > end {
+            return Err(());
+        }
+        (start, end)
+    };
+    Ok(Some((start, end)))
 }
 
 /// Minimal RFC 3986 percent-encoder for the download filename* header.
