@@ -148,7 +148,11 @@ async fn ls() {
         let cols = t.get("cols").and_then(|v| v.as_u64()).unwrap_or(0);
         let exited = t.get("exited").and_then(|v| v.as_bool()).unwrap_or(false);
         let status = if exited { "exited" } else { "alive" };
-        let title = if title.len() > 50 { &title[..50] } else { title };
+        // Cut at a char boundary: slicing bytes panics on multi-byte (e.g. CJK) titles.
+        let title = match title.char_indices().nth(50) {
+            Some((i, _)) => &title[..i],
+            None => title,
+        };
         println!("{:>4}  {:<50}  {:>3}x{:<2}  {}", id, title, rows, cols, status);
     }
 }
