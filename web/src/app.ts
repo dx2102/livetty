@@ -2,6 +2,7 @@ import { api, CHUNK, type FileEntry } from './api'
 import { WsClient, type TermInfo, type WsEvent } from './wsclient'
 import { TermPane } from './termpane'
 import { EditorPane } from './editorpane'
+import { confirmDialog } from './dialog'
 
 type PaneKind = 'term' | 'file' | 'settings'
 
@@ -423,7 +424,10 @@ export class App {
     const tab = this.tabs.get(key)
     if (!tab) return
     if (!force && tab.kind === 'file' && (tab.pane as EditorPane).dirty) {
-      if (!confirm(`${tab.title} has unsaved changes. Close anyway?`)) return
+      void confirmDialog(`${tab.title} has unsaved changes. Close anyway?`, 'Close').then(
+        (ok) => ok && this.closeTab(key, true),
+      )
+      return
     }
     if (tab.pane instanceof HTMLElement) tab.pane.remove()
     else tab.pane.dispose()
@@ -741,8 +745,9 @@ export class App {
         items.push({
           label: 'Delete',
           danger: true,
-          onclick: () => {
-            if (!confirm(`Delete ${ent.name}?${ent.is_dir ? ' (empty folders only)' : ''}`)) return
+          onclick: async () => {
+            const msg = `Delete ${ent.name}?${ent.is_dir ? ' (empty folders only)' : ''}`
+            if (!(await confirmDialog(msg, 'Delete'))) return
             void api
               .fsOp({ op: 'delete', path: full })
               .then(() => this.loadDir(this.cwd))
@@ -861,9 +866,10 @@ export class App {
         '✕',
       )
       kill.title = 'Close (kill process)'
-      kill.onclick = (e) => {
+      kill.onclick = async (e) => {
         e.stopPropagation()
-        if (!confirm(`Close Terminal #${t.id}? The process will be killed.`)) return
+        const msg = `Close Terminal #${t.id}? The process will be killed.`
+        if (!(await confirmDialog(msg, 'Close'))) return
         this.ws.sendOp({ op: 'kill', id: t.id })
       }
       // Same reason as tab-close: stop this from bubbling to the row's

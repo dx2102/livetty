@@ -13,6 +13,7 @@ import { yaml } from '@codemirror/lang-yaml'
 import { cpp } from '@codemirror/lang-cpp'
 import { sql } from '@codemirror/lang-sql'
 import { api } from './api'
+import { confirmDialog } from './dialog'
 
 function langFor(path: string): Extension | null {
   const name = path.split('/').pop() || ''
@@ -121,8 +122,9 @@ export class EditorPane {
       this.onDirtyChange(false)
     } catch (e: any) {
       if (e.status === 409) {
-        const overwrite = confirm(
-          `${this.path}\n\nThe file was modified externally (e.g. by an editor in the terminal).\n\n[OK] = overwrite disk with current editor content\n[Cancel] = do nothing, keep your edits in the editor, leave the file on disk untouched`,
+        const overwrite = await confirmDialog(
+          `${this.path}\n\nThe file was modified externally (e.g. by an editor in the terminal).\n\n[Overwrite] = overwrite disk with current editor content\n[Cancel] = do nothing, keep your edits in the editor, leave the file on disk untouched`,
+          'Overwrite',
         )
         if (overwrite) {
           const res = await api.writeFile(this.path, content)
