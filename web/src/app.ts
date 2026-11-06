@@ -269,16 +269,16 @@ export class App {
       case 'hello':
         this.terminals.clear()
         for (const t of ev.terminals) this.terminals.set(t.id, t)
-        this.renderSide()
+        this.renderTermsIfShown()
         break
       case 'create_ok':
         this.terminals.set(ev.term.id, ev.term)
-        this.renderSide()
+        this.renderTermsIfShown()
         this.openTerm(ev.term.id, false) // already attached by the create op
         break
       case 'created':
         this.terminals.set(ev.term.id, ev.term)
-        this.renderSide()
+        this.renderTermsIfShown()
         break
       case 'attached': {
         const tab = this.tabs.get(`term:${ev.id}`)
@@ -287,7 +287,7 @@ export class App {
       }
       case 'removed': {
         this.terminals.delete(ev.id)
-        this.renderSide()
+        this.renderTermsIfShown()
         const key = `term:${ev.id}`
         if (this.tabs.has(key)) this.closeTab(key, true)
         break
@@ -295,7 +295,7 @@ export class App {
       case 'exited': {
         const t = this.terminals.get(ev.id)
         if (t) t.exited = true
-        this.renderSide()
+        this.renderTermsIfShown()
         const tab = this.tabs.get(`term:${ev.id}`)
         if (tab) (tab.pane as TermPane).setExited(true)
         break
@@ -303,7 +303,7 @@ export class App {
       case 'title': {
         const t = this.terminals.get(ev.id)
         if (t) t.title = ev.title
-        this.renderSide()
+        this.renderTermsIfShown()
         const tab = this.tabs.get(`term:${ev.id}`)
         if (tab) this.setTabTitle(tab, ev.title || `Terminal ${ev.id}`)
         break
@@ -568,6 +568,16 @@ export class App {
   private lastEntries: FileEntry[] = []
   /** Row to highlight after the path box jumped straight to a file. */
   private highlightFile: string | null = null
+
+  /**
+   * Terminal list changes (title, exit, create, remove) only matter when the
+   * sidebar shows terminals. Re-rendering in files mode would rebuild the path
+   * box, and a TUI that animates its title (Claude Code's spinner) then kicks
+   * the caret out of it several times a second.
+   */
+  private renderTermsIfShown() {
+    if (this.sideOpen && this.sideMode === 'terms') this.renderSide()
+  }
 
   private renderSide(entries?: FileEntry[]) {
     if (entries) this.lastEntries = entries
