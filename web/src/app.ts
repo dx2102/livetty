@@ -295,7 +295,7 @@ export class App {
       case 'exited': {
         const t = this.terminals.get(ev.id)
         if (t) t.exited = true
-        this.renderTermsIfShown()
+        this.updateTermRow(ev.id)
         const tab = this.tabs.get(`term:${ev.id}`)
         if (tab) (tab.pane as TermPane).setExited(true)
         break
@@ -303,7 +303,7 @@ export class App {
       case 'title': {
         const t = this.terminals.get(ev.id)
         if (t) t.title = ev.title
-        this.renderTermsIfShown()
+        this.updateTermRow(ev.id)
         const tab = this.tabs.get(`term:${ev.id}`)
         if (tab) this.setTabTitle(tab, ev.title || `Terminal ${ev.id}`)
         break
@@ -403,7 +403,8 @@ export class App {
       }
     }
     // Keep sidebar's active-terminal highlight in sync with the top tab bar.
-    if (this.sideOpen && this.sideMode === 'terms') this.renderSide()
+    if (prev) this.markTermRow(prev.key, false)
+    this.markTermRow(key, true)
   }
 
   /** Put the caret back into the pane's own input (xterm textarea / editor). */
@@ -434,10 +435,12 @@ export class App {
     tab.btn.remove()
     this.tabs.delete(key)
     if (this.activeKey === key) {
+      // activate() unmarks the previous row via activeKey, which is about to be
+      // cleared, so unmark this one here.
+      this.markTermRow(key, false)
       this.activeKey = null
       const rest = [...this.tabs.keys()]
       if (rest.length) this.activate(rest[rest.length - 1])
-      else if (this.sideOpen && this.sideMode === 'terms') this.renderSide()
     }
   }
 
@@ -569,20 +572,54 @@ export class App {
   /** Row to highlight after the path box jumped straight to a file. */
   private highlightFile: string | null = null
 
+  /** Rows of the terminal list by id, empty unless the list is on screen. */
+  private termRows = new Map<number, { row: HTMLElement; dot: HTMLElement; label: HTMLElement }>()
+
   /**
-   * Terminal list changes (title, exit, create, remove) only matter when the
-   * sidebar shows terminals. Re-rendering in files mode would rebuild the path
-   * box, and a TUI that animates its title (Claude Code's spinner) then kicks
-   * the caret out of it several times a second.
+   * Only for changes to the set of terminals (create, remove, reconnect).
+   * Re-rendering in files mode would rebuild the path box and drop its caret.
    */
   private renderTermsIfShown() {
     if (this.sideOpen && this.sideMode === 'terms') this.renderSide()
+  }
+
+  /**
+   * A title or exit state changed: touch that one row only. A TUI that
+   * animates its title (Claude Code's spinner) fires this several times a
+   * second, and rebuilding the list each time would also reset hover state.
+   */
+  private updateTermRow(id: number) {
+    const r = this.termRows.get(id)
+    const t = this.terminals.get(id)
+    if (r && t) this.fillTermRow(r, t)
+  }
+
+  private fillTermRow(r: { row: HTMLElement; dot: HTMLElement; label: HTMLElement }, t: TermInfo) {
+    // id lives in the tooltip so CLI users can still look it up without
+    // the sidebar wearing a "#3" tag on every row.
+    r.row.title = `Terminal id: ${t.id}${t.title ? `, ${t.title}` : ''}`
+    r.dot.className = `w-1.5 h-1.5 rounded-full shrink-0 ${t.exited ? 'bg-gray-300' : 'bg-green-500'}`
+    r.label.textContent = t.title || `Terminal ${t.id}`
+  }
+
+  private termRowCls(active: boolean) {
+    return `group flex items-center gap-1.5 px-2 py-1.5 text-base cursor-pointer select-none ${
+      active ? 'bg-gray-100' : 'hover:bg-gray-100'
+    }`
+  }
+
+  /** Set the active highlight on the row behind a tab key, if it is a terminal. */
+  private markTermRow(key: string, active: boolean) {
+    if (!key.startsWith('term:')) return
+    const r = this.termRows.get(Number(key.slice(5)))
+    if (r) r.row.className = this.termRowCls(active)
   }
 
   private renderSide(entries?: FileEntry[]) {
     if (entries) this.lastEntries = entries
     this.sideToolbar.innerHTML = ''
     this.sideContent.innerHTML = ''
+    this.termRows.clear()
     if (!this.sideOpen) return
     if (this.sideMode === 'files') this.renderFiles()
     else this.renderTerms()
@@ -855,21 +892,12 @@ export class App {
       list.appendChild(h('div', 'px-3 py-2 text-base text-gray-400', 'No terminals'))
     }
     for (const t of terms) {
-      const isActive = this.activeKey === `term:${t.id}`
-      const row = h(
-        'div',
-        `group flex items-center gap-1.5 px-2 py-1.5 text-base cursor-pointer select-none ${
-          isActive ? 'bg-gray-100' : 'hover:bg-gray-100'
-        }`,
-      )
-      // id lives in the tooltip so CLI users can still look it up without
-      // the sidebar wearing a "#3" tag on every row.
-      row.title = `Terminal id: ${t.id}${t.title ? `, ${t.title}` : ''}`
-      const dot = h(
-        'span',
-        `w-1.5 h-1.5 rounded-full shrink-0 ${t.exited ? 'bg-gray-300' : 'bg-green-500'}`,
-      )
-      const label = h('span', 'truncate flex-1 min-w-0', t.title || `Terminal ${t.id}`)
+      const row = h('div', this.termRowCls(this.activeKey === `term:${t.id}`))
+      const dot = h('span', '')
+      const label = h('span', 'truncate flex-1 min-w-0')
+      const r = { row, dot, label }
+      this.fillTermRow(r, t)
+      this.termRows.set(t.id, r)
       const kill = h(
         'button',
         'hidden group-hover:block text-base text-gray-400 hover:text-red-600 px-0.5 shrink-0',
