@@ -84,14 +84,47 @@ fn load_or_create_config(path: &str) -> Config {
     cfg
 }
 
-/// The fixed path for the local control socket. Same for server and client.
+/// The local control socket. Same for server and client.
+/// $XDG_RUNTIME_DIR/livetty.sock if set, otherwise run/livetty.sock next to the
+/// executable. It used to fall back to /tmp/livetty-<uid>.sock, which anything
+/// could delete (that happened on 2026-11-23 and the CLI could no longer connect).
+/// Keeping it beside the binary also gives every install its own socket.
 pub fn sock_path() -> String {
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        format!("{}/livetty.sock", dir.trim_end_matches('/'))
-    } else {
-        let uid = libc_getuid();
-        format!("/tmp/livetty-{}.sock", uid)
+        return format!("{}/livetty.sock", dir.trim_end_matches('/'));
     }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        let p = format!("{}/run/livetty.sock", dir.display());
+        // Unix socket paths are limited to 104 bytes on macOS (108 on Linux)
+        if p.len() < 100 {
+            return p;
+        }
+        eprintln!("warning: {p} is too long for a socket path, using /tmp");
+    }
+    format!("/tmp/livetty-{}.sock", libc_getuid())
+}
+
+/// Bind the control socket. A socket that still accepts connections belongs to a
+/// running server, so it is left alone and we refuse to start; only a dead one is removed.
+#[cfg(unix)]
+fn bind_control_socket(sock: &str) -> tokio::net::UnixListener {
+    if std::os::unix::net::UnixStream::connect(sock).is_ok() {
+        panic!("{sock} is in use by another livetty server");
+    }
+    let _ = std::fs::remove_file(sock);
+    if let Some(parent) = std::path::Path::new(sock).parent() {
+        let _ = std::fs::create_dir_all(parent);
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+    }
+    let listener = tokio::net::UnixListener::bind(sock).expect("failed to bind UNIX socket");
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(sock, std::fs::Permissions::from_mode(0o600));
+    listener
 }
 
 // Small shim so we don't pull in the whole libc crate.
@@ -238,23 +271,28 @@ async fn serve(cfg_path: &str) {
     #[cfg(unix)]
     {
         let sock = sock_path();
-        // Remove stale
-        let _ = std::fs::remove_file(&sock);
-        // Ensure parent dir exists (it does for XDG_RUNTIME_DIR, but be safe)
-        if let Some(parent) = std::path::Path::new(&sock).parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let unix_listener =
-            tokio::net::UnixListener::bind(&sock).expect("failed to bind UNIX socket");
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600));
+        let unix_listener = bind_control_socket(&sock);
         tracing::info!("listening on unix://{}", sock);
 
+        let serve_unix = |listener: tokio::net::UnixListener, router: axum::Router| {
+            tokio::spawn(async move {
+                if let Err(e) = axum::serve(listener, router.into_make_service()).await {
+                    tracing::error!("unix socket serve error: {e}");
+                }
+            });
+        };
+        serve_unix(unix_listener, router_unix.clone());
+
+        // If the socket file disappears (someone cleaned the directory), bind a new
+        // one so the CLI keeps working without restarting the server.
         let router_unix = router_unix.clone();
         tokio::spawn(async move {
-            let make_svc = router_unix.into_make_service();
-            if let Err(e) = axum::serve(unix_listener, make_svc).await {
-                tracing::error!("unix socket serve error: {e}");
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                if !std::path::Path::new(&sock).exists() {
+                    tracing::warn!("{sock} is gone, binding it again");
+                    serve_unix(bind_control_socket(&sock), router_unix.clone());
+                }
             }
         });
     }
